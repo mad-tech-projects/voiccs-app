@@ -1,11 +1,12 @@
 import os
 import torch
 import torchaudio
+import numpy as np
 import gradio as gr
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
 
-# Cargar el modelo de Demucs
+# Carga del modelo Demucs
 model = get_model('htdemucs')
 model.eval()
 
@@ -14,35 +15,30 @@ def separar_audio(audio_path):
         return None, None
     
     try:
-        # Cargar archivo de audio
+        # Cargar audio desde la ruta enviada por Gradio
         wav, sr = torchaudio.load(audio_path)
         
-        # Asegurar que sea stereo de 2 canales
+        # Asegurar 2 canales (estéreo)
         if wav.shape[0] == 1:
             wav = wav.repeat(2, 1)
         
-        # Procesar con la IA
+        # Procesar con Demucs
         with torch.no_grad():
             sources = apply_model(model, wav.unsqueeze(0), split=True)[0]
         
-        # Pista instrumental (Bajo + Batería + Otros) y Voz
-        pista_instrumental = sources[0] + sources[1] + sources[2]
-        pista_voz = sources[3]
+        # Separar instrumental (pistas 0,1,2) y vocal (pista 3)
+        pista_instrumental = (sources[0] + sources[1] + sources[2]).cpu()
+        pista_voz = sources[3].cpu()
         
-        # Carpeta de salida
-        out_dir = os.path.abspath("output_audio")
-        os.makedirs(out_dir, exist_ok=True)
+        # Convertir a matriz NumPy para reproducción nativa en Gradio (Sample Rate, Array)
+        # Formato esperado por gr.Audio: (canales, muestras) -> traspuesto a (muestras, canales)
+        inst_numpy = pista_instrumental.numpy().T
+        voz_numpy = pista_voz.numpy().T
         
-        voz_path = os.path.join(out_dir, "VOICCS_Voz.wav")
-        inst_path = os.path.join(out_dir, "VOICCS_Instrumental.wav")
+        return (sr, voz_numpy), (sr, inst_numpy)
         
-        # Guardar archivos WAV
-        torchaudio.save(voz_path, pista_voz.cpu(), sr)
-        torchaudio.save(inst_path, pista_instrumental.cpu(), sr)
-        
-        return voz_path, inst_path
     except Exception as e:
-        print(f"Error procesando audio: {e}")
+        print(f"Error procesando el audio: {e}")
         return None, None
 
 custom_css = """
@@ -55,7 +51,7 @@ with gr.Blocks(css=custom_css, title="VOICCS AI") as app:
     gr.Markdown("# 🎙️ **VOICCS AI**\n### Tu Estudio Privado de Aislamiento Vocal")
     with gr.Row(elem_classes=["panel-premium"]):
         with gr.Column():
-            audio_input = gr.Audio(type="filepath", label="🎵 Sube tu canción (MP3, WAV, M4A)")
+            audio_input = gr.Audio(type="filepath", label="🎵 Sube tu canción (MP3, WAV)")
             btn = gr.Button("⚡ SEPARAR PISTAS AHORA", elem_classes=["btn-voiccs"])
         with gr.Column():
             audio_vocal = gr.Audio(label="🎤 Voz Aislada")
