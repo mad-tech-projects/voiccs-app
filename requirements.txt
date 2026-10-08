@@ -1,5 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.1.2+cpu
+torchaudio==2.1.2+cpu
 demucs
-torchaudio
-torch
-gradio
-pydub
+gradio==4.19.2
