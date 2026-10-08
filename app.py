@@ -1,44 +1,60 @@
 import os
+import sys
 import torch
 import torchaudio
 import numpy as np
+import imageio_ffmpeg
 import gradio as gr
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
 
+# Vincular binarios de ffmpeg/ffprobe al PATH de Python
+ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+ffmpeg_dir = os.path.dirname(ffmpeg_exe)
+os.environ["PATH"] += os.pathsep + ffmpeg_dir
+
+# Crear enlace simbólico o copia temporal a ffprobe si no existe
+ffprobe_path = os.path.join(ffmpeg_dir, "ffprobe")
+if not os.path.exists(ffprobe_path):
+    try:
+        os.symlink(ffmpeg_exe, ffprobe_path)
+    except Exception:
+        pass
+
 # Carga del modelo Demucs
+print("Cargando modelo Demucs...")
 model = get_model('htdemucs')
 model.eval()
+print("Modelo listo.")
 
 def separar_audio(audio_path):
     if not audio_path:
         return None, None
     
     try:
-        # Cargar audio desde la ruta enviada por Gradio
+        print(f"Cargando archivo: {audio_path}")
         wav, sr = torchaudio.load(audio_path)
         
         # Asegurar 2 canales (estéreo)
         if wav.shape[0] == 1:
             wav = wav.repeat(2, 1)
         
-        # Procesar con Demucs
+        print("Separando pistas con IA...")
         with torch.no_grad():
             sources = apply_model(model, wav.unsqueeze(0), split=True)[0]
         
-        # Separar instrumental (pistas 0,1,2) y vocal (pista 3)
         pista_instrumental = (sources[0] + sources[1] + sources[2]).cpu()
         pista_voz = sources[3].cpu()
         
-        # Convertir a matriz NumPy para reproducción nativa en Gradio (Sample Rate, Array)
-        # Formato esperado por gr.Audio: (canales, muestras) -> traspuesto a (muestras, canales)
+        # Formato NumPy para reproducción en Gradio: (muestras, canales)
         inst_numpy = pista_instrumental.numpy().T
         voz_numpy = pista_voz.numpy().T
         
+        print("Procesamiento finalizado exitosamente.")
         return (sr, voz_numpy), (sr, inst_numpy)
         
     except Exception as e:
-        print(f"Error procesando el audio: {e}")
+        print(f"Error procesando audio: {e}")
         return None, None
 
 custom_css = """
