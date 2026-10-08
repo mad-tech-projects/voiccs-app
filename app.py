@@ -1,45 +1,49 @@
 import os
-import torchaudio
 import torch
+import torchaudio
 import gradio as gr
 from demucs.pretrained import get_model
 from demucs.apply import apply_model
 
-# Cargar modelo en memoria solo cuando se solicite (Lazy Loading)
-model = None
-
-def obtener_modelo():
-    global model
-    if model is None:
-        model = get_model('htdemucs')
-        model.eval()
-    return model
+# Cargar el modelo de Demucs
+model = get_model('htdemucs')
+model.eval()
 
 def separar_audio(audio_path):
     if not audio_path:
         return None, None
     
-    # Cargar audio
-    wav, sr = torchaudio.load(audio_path)
-    
-    # Inferencia con IA
-    demucs_model = obtener_modelo()
-    with torch.no_grad():
-        sources = apply_model(demucs_model, wav.unsqueeze(0), split=True)[0]
-    
-    pista_instrumental = sources[0] + sources[1] + sources[2]
-    pista_voz = sources[3]
-    
-    out_dir = "output_audio"
-    os.makedirs(out_dir, exist_ok=True)
-    
-    voz_path = os.path.join(out_dir, "VOICCS_Voz.wav")
-    inst_path = os.path.join(out_dir, "VOICCS_Instrumental.wav")
-    
-    torchaudio.save(voz_path, pista_voz.cpu(), sr)
-    torchaudio.save(inst_path, pista_instrumental.cpu(), sr)
-    
-    return voz_path, inst_path
+    try:
+        # Cargar archivo de audio
+        wav, sr = torchaudio.load(audio_path)
+        
+        # Asegurar que sea stereo de 2 canales
+        if wav.shape[0] == 1:
+            wav = wav.repeat(2, 1)
+        
+        # Procesar con la IA
+        with torch.no_grad():
+            sources = apply_model(model, wav.unsqueeze(0), split=True)[0]
+        
+        # Pista instrumental (Bajo + Batería + Otros) y Voz
+        pista_instrumental = sources[0] + sources[1] + sources[2]
+        pista_voz = sources[3]
+        
+        # Carpeta de salida
+        out_dir = os.path.abspath("output_audio")
+        os.makedirs(out_dir, exist_ok=True)
+        
+        voz_path = os.path.join(out_dir, "VOICCS_Voz.wav")
+        inst_path = os.path.join(out_dir, "VOICCS_Instrumental.wav")
+        
+        # Guardar archivos WAV
+        torchaudio.save(voz_path, pista_voz.cpu(), sr)
+        torchaudio.save(inst_path, pista_instrumental.cpu(), sr)
+        
+        return voz_path, inst_path
+    except Exception as e:
+        print(f"Error procesando audio: {e}")
+        return None, None
 
 custom_css = """
 body, .gradio-container { background: #0B0C10 !important; color: #FFFFFF !important; }
@@ -51,14 +55,13 @@ with gr.Blocks(css=custom_css, title="VOICCS AI") as app:
     gr.Markdown("# 🎙️ **VOICCS AI**\n### Tu Estudio Privado de Aislamiento Vocal")
     with gr.Row(elem_classes=["panel-premium"]):
         with gr.Column():
-            audio_input = gr.Audio(type="filepath", label="🎵 Sube tu canción (MP3, WAV)")
-            btn = gr.Button("⚡ SEPARAR PISTAS", elem_classes=["btn-voiccs"])
+            audio_input = gr.Audio(type="filepath", label="🎵 Sube tu canción (MP3, WAV, M4A)")
+            btn = gr.Button("⚡ SEPARAR PISTAS AHORA", elem_classes=["btn-voiccs"])
         with gr.Column():
-            audio_vocal = gr.Audio(label="🎤 Voz Aislada", format="wav")
-            audio_inst = gr.Audio(label="🎸 Pista Instrumental", format="wav")
+            audio_vocal = gr.Audio(label="🎤 Voz Aislada")
+            audio_inst = gr.Audio(label="🎸 Pista Instrumental")
             
     btn.click(separar_audio, inputs=[audio_input], outputs=[audio_vocal, audio_inst])
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    app.launch(server_name="0.0.0.0", server_port=port)
+    app.launch(server_name="0.0.0.0", server_port=7860, share=True)
