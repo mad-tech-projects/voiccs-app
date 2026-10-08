@@ -89,4 +89,5 @@ with gr.Blocks(css=custom_css, title="VOICCS AI") as app:
         outputs=[audio_vocal, audio_inst]
     )
 
-app.launch()
+port = int(os.environ.get("PORT", 7860))
+app.launch(server_name="0.0.0.0", server_port=port)
